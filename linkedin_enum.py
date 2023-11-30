@@ -127,7 +127,7 @@ def linkedin_search_list(search_keys, cookie_li_at, organisation_id, outfile):
                 job_title = get_job_title(profile_id, cookie_li_at, organisation_id)
                 if job_title:
                     print(key + ": " + job_title + " | https://www.linkedin.com/in/" + profile_url)
-                    content = key + ",'" + job_title + "',https://www.linkedin.com/in/" + profile_url
+                    content = key + ',"' + job_title + '",https://www.linkedin.com/in/' + profile_url
                     write_file(outfile_path,content)
                 else:
                     print(key + ": User found but unable to retrieve job title. Profile URL: https://www.linkedin.com/in/" + profile_url)
@@ -164,6 +164,11 @@ def check_existing_outfile(outfile_path):
             print("Command not recognised. Exiting.")
             sys.exit(1)
     
+    else:
+        with open(outfile_path, 'w') as file:
+            file.write("Name,Job Title,LinkedIn URL\n")
+            return
+        
     
 def write_file(outfile_path, content):
     with open(outfile_path, 'a', encoding='utf-8') as file:
@@ -175,7 +180,7 @@ def write_file(outfile_path, content):
 
 if __name__ == "__main__":
     if len(sys.argv) != 5:
-        print("Usage: python script.py <linkedin_company_url> <search_key_or_file> <li_at_cookie_value> <csv_outfile")
+        print("Usage: python script.py <linkedin_company_url> <search_key_or_file> <li_at_cookie_value> <csv_outfile>")
         sys.exit(1)
 
     url = sys.argv[1]
