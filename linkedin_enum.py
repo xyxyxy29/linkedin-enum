@@ -18,12 +18,15 @@ def extract_organisation_id(url):
             if organisation_id_list:
                 return organisation_id_list[0]
             else:
-                return "LinkedIn organisation ID not found."
+                print("LinkedIn organisation ID not found.")
+                sys.exit(1)
         else:
-            return f"Failed to retrieve data. Status code: {response.status_code}"
+            return f"Failed to retrieve organisation ID. Status code: {response.status_code}"
+            sys.exit(1)
 
     except Exception as e:
         return f"An error occurred: {str(e)}"
+        sys.exit(1)
 
 def read_search_keys(search_key):
     try:
@@ -36,6 +39,7 @@ def read_search_keys(search_key):
             return [search_key.strip()]
     except Exception as e:
         return f"An error occurred while reading search keys: {str(e)}"
+        sys.exit(1)
 
 def linkedin_search(search_key, cookie_li_at, organisation_id):
     try:
@@ -52,13 +56,14 @@ def linkedin_search(search_key, cookie_li_at, organisation_id):
 
         if response.status_code == 200:
             data = response.text
-            profile_url_values = re.findall(r'"navigationUrl":"https://www.linkedin.com/in/(.*?)\?', data)
-            if profile_url_values and all(word.lower() in profile_url_values[0].lower() for word in search_key.split()):
+            profile_url_values = re.findall(r'"navigationUrl":"https://www.linkedin.com/in/(.*?)\?', data) 
+            
+            if profile_url_values:
                 profile_url = profile_url_values[0]
                 return profile_url
 
         else:
-            return f"Failed to retrieve data. Status code: {response.status_code}"
+            return f"Failed to retrieve LinkedIn profile. Status code: {response.status_code}"
 
     except Exception as e:
         return f"An error occurred: {str(e)}"
@@ -84,7 +89,7 @@ def get_profile_id(profile_url_path, cookie_li_at):
                 return profile_id[0]
 
         else:
-            return f"Failed to retrieve data. Status code: {response.status_code}"     
+            return f"Failed to retrieve profile ID. Status code: {response.status_code}"     
 
     except Exception as e:
         return f"An error occurred: {str(e)}"
@@ -111,40 +116,100 @@ def get_job_title(profile_id, cookie_li_at, organisation_id):
 
                 
         else:
-            return f"Failed to retrieve data. Status code: {response.status_code}"     
+            return f"Failed to retrieve job title. Status code: {response.status_code}"     
+
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
+        
+        
+def get_name(profile_id, cookie_li_at, organisation_id):
+    try:
+        url = f"https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(profileUrn:urn%3Ali%3Afsd_profile%3A{profile_id})&queryId=voyagerIdentityDashProfileCards.fcc08769f74e2381321c2f1f2371561c"
+
+        headers = {
+            'Cookie': f"JSESSIONID=\"foo\"; li_at={cookie_li_at}",
+            'Csrf-Token': 'foo', 
+        }            
+
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.text
+            firstname = re.findall(r'"firstName":"(.*?)"', data)
+            
+            lastname = re.findall(r'"lastName":"(.*?)"', data)
+            fullname= firstname[0] + " " + lastname[0]
+            
+            if fullname:
+                return fullname
+                
+
+
+                
+        else:
+            return f"Failed to retrieve LinkedIn name. Status code: {response.status_code}"     
 
     except Exception as e:
         return f"An error occurred: {str(e)}"
         
         
 def linkedin_search_list(search_keys, cookie_li_at, organisation_id, outfile):
-    results = []
     for key in search_keys:
-        profile_url = linkedin_search(key, cookie_li_at, organisation_id)
-        if profile_url:
-            profile_id = get_profile_id(profile_url, cookie_li_at)
-            if profile_id:
-                job_title = get_job_title(profile_id, cookie_li_at, organisation_id)
-                if job_title:
-                    print(key + ": " + job_title + " | https://www.linkedin.com/in/" + profile_url)
-                    content = key + ',"' + job_title + '",https://www.linkedin.com/in/' + profile_url
-                    write_file(outfile_path,content)
+        if not key.strip()== '':
+            # get linkedin profile url
+            profile_url = linkedin_search(key, cookie_li_at, organisation_id)
+            
+            if profile_url:
+            
+                # get profile id
+                profile_id = get_profile_id(profile_url, cookie_li_at)
+                
+                if profile_id:
+                    
+                    # get name
+                    fullname = get_name(profile_id, cookie_li_at, organisation_id)
+                    
+                    
+                    # get job title
+                    job_title = get_job_title(profile_id, cookie_li_at, organisation_id)
+                    
+                    namecheck = fullname + profile_url
+                   
+                    
+                    if job_title and all(word.lower() in namecheck.lower() for word in key.split()):
+                        print(key + " | " + fullname + " (Exact match) | " + job_title + " | https://www.linkedin.com/in/" + profile_url)
+                        content = key + ',"' + job_title + '",https://www.linkedin.com/in/' + profile_url + ",Exact Match"
+                        write_file(outfile_path,content)
+                        
+                    elif job_title and not all(word.lower() in namecheck.lower() for word in key.split()):
+                        print(key + " | " + fullname + " (Possible match) | " + job_title + " | https://www.linkedin.com/in/" + profile_url)
+                        content = key + ',"' + job_title + '",https://www.linkedin.com/in/' + profile_url + ",Potential Match"
+                        write_file(outfile_path,content)
+
+
+                    else:
+                        print(key + ": Unable to retrieve job title. Profile URL: https://www.linkedin.com/in/" + profile_url)
+                        content = key + "," + "Not Found" + ",https://www.linkedin.com/in/" + profile_url + ",Potential Match"
+                        write_file(outfile_path,content)
+
+                        
+                        
+                    
                 else:
-                    print(key + ": User found but unable to retrieve job title. Profile URL: https://www.linkedin.com/in/" + profile_url)
-                    content = key + "," + "Not Found" + ",https://www.linkedin.com/in/" + profile_url
+                    print(key + ": Unable to extract profile ID.")
+                    content = key + "," + "Not Found" + ",https://www.linkedin.com/in/" + profile_url + ",Potential Match"
                     write_file(outfile_path,content)
             else:
-                print(key + ": User found but unable to extract profile ID.")
-                content = key + "," + "Not Found" + ",https://www.linkedin.com/in/" + profile_url
-                write_file(outfile_path,content)
+                print(key + ": User not found in specified organisation.")
+                content = key + "," + "Not Found" + "," + "Not Found"
+                write_file(outfile_path,content) 
+                
         else:
-            print(key + ": User not found.")
-            content = key + "," + "Not Found" + "," + "Not Found"
-            write_file(outfile_path,content) 
+                print(key + ": Invalid search key provided.")
+                content = key + "," + "Not Found" + "," + "Not Found"
+                write_file(outfile_path,content) 
         time.sleep(1) 
         
-#        results.append(result)
-    return results
 
 def check_existing_outfile(outfile_path):
    # Check if the file already exists
@@ -153,7 +218,7 @@ def check_existing_outfile(outfile_path):
 
         if user_input == 'y':
             with open(outfile_path, 'w') as file:
-                file.write("Name,Job Title,LinkedIn URL\n")
+                file.write("Name,Job Title,LinkedIn URL,Match\n")
                 return
 
         elif user_input == 'n':
@@ -166,7 +231,7 @@ def check_existing_outfile(outfile_path):
     
     else:
         with open(outfile_path, 'w') as file:
-            file.write("Name,Job Title,LinkedIn URL\n")
+            file.write("Name,Job Title,LinkedIn URL,Match\n")
             return
         
     
