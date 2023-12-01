@@ -4,6 +4,8 @@ import sys
 from urllib.parse import quote
 import time
 import os
+import csv
+import argparse
 
 def extract_organisation_id(url):
     try:
@@ -11,22 +13,32 @@ def extract_organisation_id(url):
             'Accept-Encoding': 'gzip, deflate, br',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
         }
-        response = requests.get(url, headers=headers)
+        
+        org_id_list = []
+        org_url_list = url.split(',')
+        
+        for i in org_url_list:
+            
+            response = requests.get(i, headers=headers)
 
-        if response.status_code == 200:
-            organisation_id_list = re.findall(r'urn:li:organization:(.*?)"', response.text)
-            if organisation_id_list:
-                return organisation_id_list[0]
+            if response.status_code == 200:
+                organisation_id_list = re.findall(r'urn:li:organization:(.*?)"', response.text)
+                
+                if organisation_id_list:
+                    org_id_list.append(organisation_id_list[0])
+                    
+                else:
+                    print(f"LinkedIn organisation ID from {i} not found.")
+                    sys.exit(1)
             else:
-                print("LinkedIn organisation ID not found.")
+                return f"Failed to retrieve organisation ID from {i}. Status code: {response.status_code}"
                 sys.exit(1)
-        else:
-            return f"Failed to retrieve organisation ID. Status code: {response.status_code}"
-            sys.exit(1)
+                
+        return org_id_list
 
     except Exception as e:
-        return f"An error occurred: {str(e)}"
-        sys.exit(1)
+            return f"An error occurred: {str(e)}"
+            sys.exit(1)
 
 def read_search_keys(search_key):
     try:
@@ -41,10 +53,15 @@ def read_search_keys(search_key):
         return f"An error occurred while reading search keys: {str(e)}"
         sys.exit(1)
 
-def linkedin_search(search_key, cookie_li_at, organisation_id):
+def linkedin_search(search_key, cookie_li_at, organisation_id_list, country_id_list):
     try:
         search_key_encoded = quote(search_key, safe='')
-        url = f"https://www.linkedin.com/voyager/api/graphql?variables=(start:0,origin:GLOBAL_SEARCH_HEADER,query:(keywords:{search_key_encoded},flagshipSearchIntent:SEARCH_SRP,queryParameters:List((key:currentCompany,value:List({organisation_id})),(key:resultType,value:List(PEOPLE))),includeFiltersInResponse:false))&queryId=voyagerSearchDashClusters.a2c8fa93b136d262362dfeaa5b857b62"
+        
+        org_id_concat = ','.join(organisation_id_list)
+        
+        country_id_concat = ','.join(country_id_list)
+        
+        url = f"https://www.linkedin.com/voyager/api/graphql?variables=(start:0,origin:GLOBAL_SEARCH_HEADER,query:(keywords:{search_key_encoded},flagshipSearchIntent:SEARCH_SRP,queryParameters:List((key:currentCompany,value:List({org_id_concat})),(key:geoUrn,value:List({country_id_concat})),(key:resultType,value:List(PEOPLE))),includeFiltersInResponse:false))&queryId=voyagerSearchDashClusters.994bf4e7d2173b92ccdb5935710c3c5d"
 
         headers = {
             'Cookie': f"JSESSIONID=\"foo\"; li_at={cookie_li_at}",
@@ -95,7 +112,7 @@ def get_profile_id(profile_url_path, cookie_li_at):
         return f"An error occurred: {str(e)}"
         
         
-def get_job_title(profile_id, cookie_li_at, organisation_id):
+def get_job_title(profile_id, cookie_li_at):
     try:
         url = f"https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(profileUrn:urn%3Ali%3Afsd_profile%3A{profile_id})&queryId=voyagerIdentityDashProfileCards.004536ac07d237fe4177532af520f57d"
 
@@ -108,8 +125,15 @@ def get_job_title(profile_id, cookie_li_at, organisation_id):
         
         if response.status_code == 200:
             data = response.text
-            extract = re.findall(rf'experience_company_logo(.*?){organisation_id}', data)
-            job_title = re.findall(r'"text":"(.*?)"', extract[0])
+            extract = re.findall(r'experience_company_logo(.*?)406952', data)
+            
+            if not extract:
+                extract = re.findall(r'experience_company_logo(.*?)15235388', data)
+                job_title = re.findall(r'"text":"(.*?)"', extract[0])
+            
+            else:
+                
+                job_title = re.findall(r'"text":"(.*?)"', extract[0])
             
             if job_title:
                 return job_title[-1]
@@ -122,7 +146,7 @@ def get_job_title(profile_id, cookie_li_at, organisation_id):
         return f"An error occurred: {str(e)}"
         
         
-def get_name(profile_id, cookie_li_at, organisation_id):
+def get_name(profile_id, cookie_li_at):
     try:
         url = f"https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(profileUrn:urn%3Ali%3Afsd_profile%3A{profile_id})&queryId=voyagerIdentityDashProfileCards.fcc08769f74e2381321c2f1f2371561c"
 
@@ -153,11 +177,11 @@ def get_name(profile_id, cookie_li_at, organisation_id):
         return f"An error occurred: {str(e)}"
         
         
-def linkedin_search_list(search_keys, cookie_li_at, organisation_id, outfile):
+def linkedin_search_list(search_keys, cookie_li_at, organisation_id, outfile_path, country_id_list):
     for key in search_keys:
         if not key.strip()== '':
             # get linkedin profile url
-            profile_url = linkedin_search(key, cookie_li_at, organisation_id)
+            profile_url = linkedin_search(key, cookie_li_at, organisation_id, country_id_list)
             
             if profile_url:
             
@@ -167,29 +191,30 @@ def linkedin_search_list(search_keys, cookie_li_at, organisation_id, outfile):
                 if profile_id:
                     
                     # get name
-                    fullname = get_name(profile_id, cookie_li_at, organisation_id)
+                    fullname = get_name(profile_id, cookie_li_at)
                     
                     
                     # get job title
-                    job_title = get_job_title(profile_id, cookie_li_at, organisation_id)
+                    job_title = get_job_title(profile_id, cookie_li_at)
                     
                     namecheck = fullname + profile_url
                    
                     
                     if job_title and all(word.lower() in namecheck.lower() for word in key.split()):
                         print(key + " | " + fullname + " (Exact match) | " + job_title + " | https://www.linkedin.com/in/" + profile_url)
-                        content = key + ',"' + job_title + '",https://www.linkedin.com/in/' + profile_url + ",Exact Match"
+                        
+                        content = [key, fullname, job_title, f"https://www.linkedin.com/in/{profile_url}", "Exact Match"]
                         write_file(outfile_path,content)
                         
                     elif job_title and not all(word.lower() in namecheck.lower() for word in key.split()):
                         print(key + " | " + fullname + " (Possible match) | " + job_title + " | https://www.linkedin.com/in/" + profile_url)
-                        content = key + ',"' + job_title + '",https://www.linkedin.com/in/' + profile_url + ",Potential Match"
+                        content = [key, fullname, job_title, f"https://www.linkedin.com/in/{profile_url}", "Possible Match"]
                         write_file(outfile_path,content)
 
 
                     else:
                         print(key + ": Unable to retrieve job title. Profile URL: https://www.linkedin.com/in/" + profile_url)
-                        content = key + "," + "Not Found" + ",https://www.linkedin.com/in/" + profile_url + ",Potential Match"
+                        content = [key, fullname, "Not Found", f"https://www.linkedin.com/in/{profile_url}", "Potential Match"]
                         write_file(outfile_path,content)
 
                         
@@ -197,16 +222,16 @@ def linkedin_search_list(search_keys, cookie_li_at, organisation_id, outfile):
                     
                 else:
                     print(key + ": Unable to extract profile ID.")
-                    content = key + "," + "Not Found" + ",https://www.linkedin.com/in/" + profile_url + ",Potential Match"
+                    content = [key, fullname, "Not Found", f"https://www.linkedin.com/in/{profile_url}", "Potential Match"]
                     write_file(outfile_path,content)
             else:
                 print(key + ": User not found in specified organisation.")
-                content = key + "," + "Not Found" + "," + "Not Found"
+                content = [key, "Not Found", "Not Found", "Not Found"]
                 write_file(outfile_path,content) 
                 
         else:
                 print(key + ": Invalid search key provided.")
-                content = key + "," + "Not Found" + "," + "Not Found"
+                content = [key, "Invalid Search Key"]
                 write_file(outfile_path,content) 
         time.sleep(1) 
         
@@ -217,8 +242,10 @@ def check_existing_outfile(outfile_path):
         user_input = input(f"The file '{outfile_path}' already exists. Do you want to overwrite it? (y/n): ").lower()
 
         if user_input == 'y':
-            with open(outfile_path, 'w') as file:
-                file.write("Name,Job Title,LinkedIn URL,Match\n")
+            with open(outfile_path, 'w', newline='', encoding='utf-8') as csvfile:
+                data = ["Key", "Full Name", "Job Title", "LinkedIn URL", "Match Type"]
+                csvwriter = csv.writer(csvfile)
+                csvwriter.writerow(data)
                 return
 
         elif user_input == 'n':
@@ -230,28 +257,81 @@ def check_existing_outfile(outfile_path):
             sys.exit(1)
     
     else:
-        with open(outfile_path, 'w') as file:
-            file.write("Name,Job Title,LinkedIn URL,Match\n")
+        with open(outfile_path, 'w', newline='', encoding='utf-8') as csvfile:
+            data = ["Key", "Full Name", "Job Title", "LinkedIn URL", "Match Type"]
+            csvwriter = csv.writer(csvfile)
+            csvwriter.writerow(data)
             return
         
     
 def write_file(outfile_path, content):
-    with open(outfile_path, 'a', encoding='utf-8') as file:
-        file.write(content)
-        file.write("\n")
+    with open(outfile_path, 'a', newline='', encoding='utf-8') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(content)
+        
+        
+def get_filter_country(country_list, cookie_li_at):
+    try:
+        country_list_encoded = quote(country_list, safe='')
+
+        url = f"https://www.linkedin.com/voyager/api/graphql?variables=(keywords:{country_list_encoded},query:(typeaheadFilterQuery:(geoSearchTypes:List(MARKET_AREA,COUNTRY_REGION,ADMIN_DIVISION_1,CITY))),type:GEO)&queryId=voyagerSearchDashReusableTypeahead.23c9f700d1a32edbb7f6646dda5e7480"
+
+        headers = {
+            'Cookie': f"JSESSIONID=\"foo\"; li_at={cookie_li_at}",
+            'Csrf-Token': 'foo',
+        }
+
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.text
+
+            countries = re.findall(r'"text":"(.*?)"', data)
+            country_ids = re.findall(r'"trackingUrn":"urn:li:geo:(.*?)"', data)
+
+            # Prompt user to select a subset of countries
+            print("Select countries:")
+            for i, country in enumerate(countries, start=1):
+                print(f"{i}. {country}")
+
+            selected_indices = input("Enter the indices of the countries you want to select (comma-separated): ")
+            selected_indices = [int(index) - 1 for index in selected_indices.split(',')]
+
+            # Validate selected indices
+            valid_indices = [index for index in selected_indices if 0 <= index < len(countries)]
+            selected_countries = [countries[index] for index in valid_indices]
+            selected_country_ids = [country_ids[index] for index in valid_indices]
+
+            return selected_country_ids
+
+        else:
+            return f"Failed to retrieve country IDs. Status code: {response.status_code}"
+
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
         
 
 
 
-if __name__ == "__main__":
-    if len(sys.argv) != 5:
-        print("Usage: python script.py <linkedin_company_url> <search_key_or_file> <li_at_cookie_value> <csv_outfile>")
-        sys.exit(1)
+def main():
+    parser = argparse.ArgumentParser(description="LinkedIn Scraper")
+    parser.add_argument("--companyurl", help="LinkedIn company URL. Separate multiple URLs with a comma.")
+    parser.add_argument("--search", help="Search key or path to a file containing search keys")
+    parser.add_argument("--cookie", help="li_at cookie value")
+    parser.add_argument("--outfile", help="Output CSV file path")
+    parser.add_argument("--country", help="Country to filter")
+    
+    args = parser.parse_args()
+    
+    url = args.companyurl
+    search_key_input = args.search
+    cookie_li_at = args.cookie
+    outfile_path = args.outfile
+    country_list = args.country
+    
+    
+    
 
-    url = sys.argv[1]
-    search_key_input = sys.argv[2]
-    cookie_li_at = sys.argv[3]
-    outfile_path = sys.argv[4]
     
     # Check if outfile exists
     check_existing_outfile(outfile_path)
@@ -261,8 +341,13 @@ if __name__ == "__main__":
 
     # Read search keys from file or use the provided string
     search_keys = read_search_keys(search_key_input)
+    
+    country_id_list = get_filter_country(country_list,cookie_li_at)
 
     # Call the linkedin_search function for each search key and get the results
-    linkedin_search_list(search_keys, cookie_li_at, organisation_id, outfile_path)
+    linkedin_search_list(search_keys, cookie_li_at, organisation_id, outfile_path, country_id_list)
+
+if __name__ == "__main__":
+    main()
 
         
