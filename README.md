@@ -2,6 +2,8 @@
 
 A Python script to retrieve a user's current job title from LinkedIn profiles based on provided names and a LinkedIn organization URL.
 
+USE RESPONSIBLY AND AT YOUR OWN RISK! Throwaway accounts only or risk getting banned.
+
 ## Prerequisites
 Python 3.x
 
