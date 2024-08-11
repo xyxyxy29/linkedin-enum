@@ -9,16 +9,17 @@ Python 3.x
 
 ## Usage
 
-`python script.py <linkedin_company_url> <search_key_or_file> <li_at_cookie_value> <csv_outfile>`
+`python3 linkedin-enum.py --search <search_key_or_file> --country <country_value> --outfile <csv_outfile> --cookie <li_at_cookie_value> --companyurl <linkedin_company_url>`
 
 - <linkedin_company_url>: LinkedIn organization URL, e.g. https://www.linkedin.com/company/google/
 - <search_key_or_file>: Name to search or path to a text file containing multiple names (one per line).
+- <country_value>: country filter for user search
 - <li_at_cookie_value>: li_at cookie value obtained from a valid LinkedIn session.
 - <csv_outfile>: Path to the output CSV file.
 
 Example:
 
-`python script.py https://www.linkedin.com/company/example search_keys.txt LI_AT_COOKIE_VALUE output.csv`
+`python3 linkedin-enum.py --search ./target_names.txt --country hongkong --outfile role_enum.csv --cookie li_at_cookie --companyurl https://www.linkedin.com/company/google/`
 
 ## Notes
 - Make sure to comply with LinkedIn's terms of service while using this script.
